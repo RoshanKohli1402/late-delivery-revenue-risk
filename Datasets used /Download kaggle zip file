@@ -1,0 +1,10 @@
+# Dataset
+
+This project uses the Brazilian E-Commerce Public Dataset by Olist.
+
+Download the dataset from Kaggle:
+https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce
+
+After downloading, place the CSV files in:
+
+data/raw/
