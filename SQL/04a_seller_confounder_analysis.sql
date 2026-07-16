@@ -26,6 +26,8 @@ also tend to have lower customer repeat purchase rates.
 ==========================================================
 */
 
+-- Seller-level confounder check: does late/on-time delivery split
+-- within each seller change repeat-purchase rate?
 WITH delivery_status AS (
     SELECT
         order_id,
@@ -36,12 +38,11 @@ WITH delivery_status AS (
         END AS delivery_status
     FROM orders
     WHERE order_status = 'delivered'
+      AND order_delivered_customer_date IS NOT NULL
 ),
-
-retention_check AS (
+customer_retention AS (
     SELECT
         c.customer_unique_id,
-        COUNT(o.order_id) AS total_orders,
         CASE
             WHEN COUNT(o.order_id) > 1 THEN 'Repeat'
             ELSE 'One-Time'
@@ -52,46 +53,35 @@ retention_check AS (
     WHERE o.order_status = 'delivered'
     GROUP BY c.customer_unique_id
 )
-
 SELECT
     oi.seller_id,
-
-    COUNT(DISTINCT o.order_id) AS total_orders,
-
+    ds.delivery_status,
+    COUNT(DISTINCT c.customer_unique_id) AS customers,
+    COUNT(DISTINCT CASE
+                WHEN cr.customer_type = 'Repeat'
+                THEN c.customer_unique_id
+            END) AS repeat_customers,
     ROUND(
-        AVG(ds.delivery_status = 'Late') * 100,
+        COUNT(DISTINCT CASE
+                    WHEN cr.customer_type = 'Repeat'
+                    THEN c.customer_unique_id
+                END) * 100.0
+        / COUNT(DISTINCT c.customer_unique_id),
         2
-    ) AS late_percentage,
-
-    ROUND(
-        AVG(rc.customer_type = 'Repeat') * 100,
-        2
-    ) AS repeat_percentage,
-
-    ROUND(
-        AVG(r.review_score),
-        2
-    ) AS avg_review_score
-
+    ) AS repeat_rate
 FROM orders o
-
-JOIN order_items oi
-    ON o.order_id = oi.order_id
-
 JOIN customers c
     ON o.customer_id = c.customer_id
-
-JOIN retention_check rc
-    ON c.customer_unique_id = rc.customer_unique_id
-
+JOIN customer_retention cr
+    ON c.customer_unique_id = cr.customer_unique_id
 JOIN delivery_status ds
     ON o.order_id = ds.order_id
-
-LEFT JOIN order_reviews r
-    ON o.order_id = r.order_id
-
-GROUP BY oi.seller_id
-
-HAVING COUNT(DISTINCT o.order_id) >= 30
-
-ORDER BY late_percentage DESC;
+JOIN order_items oi
+    ON o.order_id = oi.order_id
+GROUP BY
+    oi.seller_id,
+    ds.delivery_status
+HAVING COUNT(DISTINCT c.customer_unique_id) >= 20
+ORDER BY
+    oi.seller_id,
+    ds.delivery_status;
