@@ -1,0 +1,49 @@
+/*
+==========================================================
+Query 1: Delivery Performance vs Customer Reviews
+
+Business Question:
+How do delivery timelines (Late vs On Time) relate to
+customer review scores?
+
+Tables:
+- orders
+- order_reviews
+
+Output:
+- Order ID
+- Purchase Date
+- Estimated Delivery
+- Actual Delivery
+- Delivery Status
+- Review Score
+==========================================================
+*/
+
+WITH order_table AS (
+    SELECT
+        order_id,
+        DATE(order_purchase_timestamp) AS purchase_time,
+        DATE(order_approved_at) AS approval_time,
+        DATE(order_estimated_delivery_date) AS estimated_time,
+        DATE(order_delivered_customer_date) AS order_arrival
+    FROM orders
+    WHERE order_status = 'delivered'
+),
+
+delivery_status AS (
+    SELECT
+        order_id,
+        CASE
+            WHEN order_arrival > estimated_time THEN 'Late'
+            ELSE 'On Time'
+        END AS delivery_status
+    FROM order_table
+)
+
+SELECT ot.order_id , purchase_time, estimated_time,order_arrival , delivery_status , review_score 
+FROM order_table ot
+JOIN delivery_status ds
+ON ot.order_id = ds.order_id
+JOIN order_reviews re on re.order_id = ot.order_id
+order by ot.order_id
