@@ -26,6 +26,7 @@ vary significantly across product categories.
 ==========================================================
 */
 
+-- Category-level confounder check: same fix applied
 WITH delivery_status AS (
     SELECT
         order_id,
@@ -36,12 +37,11 @@ WITH delivery_status AS (
         END AS delivery_status
     FROM orders
     WHERE order_status = 'delivered'
+      AND order_delivered_customer_date IS NOT NULL
 ),
-
-retention_check AS (
+customer_retention AS (
     SELECT
         c.customer_unique_id,
-        COUNT(o.order_id) AS total_orders,
         CASE
             WHEN COUNT(o.order_id) > 1 THEN 'Repeat'
             ELSE 'One-Time'
@@ -52,46 +52,37 @@ retention_check AS (
     WHERE o.order_status = 'delivered'
     GROUP BY c.customer_unique_id
 )
-
 SELECT
     p.product_category_name,
-
-    COUNT(DISTINCT o.order_id) AS total_orders,
-
+    ds.delivery_status,
+    COUNT(DISTINCT c.customer_unique_id) AS customers,
+    COUNT(DISTINCT CASE
+                WHEN cr.customer_type = 'Repeat'
+                THEN c.customer_unique_id
+            END) AS repeat_customers,
     ROUND(
-        AVG(ds.delivery_status = 'Late') * 100,
+        COUNT(DISTINCT CASE
+                    WHEN cr.customer_type = 'Repeat'
+                    THEN c.customer_unique_id
+                END) * 100.0
+        / COUNT(DISTINCT c.customer_unique_id),
         2
-    ) AS late_percentage,
-
-    ROUND(
-        AVG(rc.customer_type = 'Repeat') * 100,
-        2
-    ) AS repeat_percentage,
-
-    ROUND(
-        SUM(oi.price),
-        2
-    ) AS revenue
-
+    ) AS repeat_rate
 FROM orders o
-
-JOIN order_items oi
-    ON o.order_id = oi.order_id
-
-JOIN products p
-    ON oi.product_id = p.product_id
-
 JOIN customers c
     ON o.customer_id = c.customer_id
-
-JOIN retention_check rc
-    ON c.customer_unique_id = rc.customer_unique_id
-
+JOIN customer_retention cr
+    ON c.customer_unique_id = cr.customer_unique_id
 JOIN delivery_status ds
     ON o.order_id = ds.order_id
-
-GROUP BY p.product_category_name
-
-HAVING COUNT(DISTINCT o.order_id) >= 30
-
-ORDER BY late_percentage DESC;
+JOIN order_items oi
+    ON o.order_id = oi.order_id
+JOIN products p
+    ON oi.product_id = p.product_id
+GROUP BY
+    p.product_category_name,
+    ds.delivery_status
+HAVING COUNT(DISTINCT c.customer_unique_id) >= 20
+ORDER BY
+    p.product_category_name,
+    ds.delivery_status;
